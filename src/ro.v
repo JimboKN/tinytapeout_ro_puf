@@ -1,7 +1,7 @@
 `default_nettype none
 
 module ro #(
-  parameter RO_SIZE = 25
+  parameter RO_SIZE = 13
 ) (
   input  wire en,
   output wire ro_clk
