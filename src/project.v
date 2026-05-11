@@ -59,7 +59,7 @@ module tt_um_jimbok_ro_puf(
 
   //////////////////// SPI Slave Logic ////////////////////
 
-  reg [SPI_WIDTH-1:0] tx_data = 0;
+  reg [SPI_WIDTH-1:0] tx_data;
 
   // SPI mode 0: MISO changes on falling SCK
   reg [SPI_WIDTH-1:0] tx_shift;
@@ -76,7 +76,7 @@ module tt_um_jimbok_ro_puf(
   assign spi_miso = tx_shift[SPI_WIDTH-1];
 
   // suppress unused-signal warnings
-  wire _unused = &{ena, spi_mosi, 1'b0};
+  wire _unused = &{ena, ui_in[7:1], uio_in[7:4], uio_in[2:1], 1'b0};
 
   //////////////////// Ring Oscillators ////////////////////
 
