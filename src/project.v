@@ -14,8 +14,8 @@ module tt_um_jimbok_ro_puf(
   //////////////////// Parameters ////////////////////
 
   localparam SPI_WIDTH = 129;
-  localparam COUNTER_WIDTH = 20;
-  localparam RO_SIZE = 25;
+  localparam COUNTER_WIDTH = 21;
+  localparam RO_SIZE = 13;
   localparam NUM_ROS = 32; 
 
   //////////////////// Pin Configuration ////////////////////
@@ -59,17 +59,21 @@ module tt_um_jimbok_ro_puf(
 
   //////////////////// SPI Slave Logic ////////////////////
 
-  reg [SPI_WIDTH-1:0] tx_data;
-
   // SPI mode 0: MISO changes on falling SCK
   reg [SPI_WIDTH-1:0] tx_shift;
 
+  localparam [2:0] S_PACK = 3'd5;
+  reg [2:0] pack_cnt;
+
+  // Replace tx_shift logic with:
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n)
       tx_shift <= {SPI_WIDTH{1'b0}};
-    else if (!cs_active)
-      tx_shift <= tx_data;
-    else if (sck_falling)
+    else if (state == S_IDLE && start_falling)
+      tx_shift <= {SPI_WIDTH{1'b0}};
+    else if (state == S_PACK)
+      tx_shift <= {tx_shift[SPI_WIDTH-2:0], lehmer_acc[pack_cnt]};
+    else if (cs_active && sck_falling)
       tx_shift <= {tx_shift[SPI_WIDTH-2:0], 1'b0};
   end
 
@@ -127,18 +131,9 @@ module tt_um_jimbok_ro_puf(
   end
 
   // ro_run ensures ROs start at the same time
-  reg [NUM_ROS-1:0] ro_en_reg;
-  assign ro_en = ro_en_reg;
-  always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      ro_en_reg <= {NUM_ROS{1'b0}};
-    end
-    else if (ro_run) begin
-      ro_en_reg[i_idx] <= 1'b1;
-      ro_en_reg[j_idx] <= 1'b1;
-    end
-    else ro_en_reg <= {NUM_ROS{1'b0}};
-  end
+  wire [NUM_ROS-1:0] sel_i = 32'b1 << i_idx;
+  wire [NUM_ROS-1:0] sel_j = 32'b1 << j_idx;
+  assign ro_en = ro_run ? (sel_i | sel_j) : 32'b0;
 
   //////////////////// Lehmer-digit width lookup ////////////////////
 
@@ -167,7 +162,6 @@ module tt_um_jimbok_ro_puf(
       j_idx      <= 5'd1;
       lehmer_acc <= 5'd0;
       rst_timer  <= 3'd0;
-      tx_data    <= {SPI_WIDTH{1'b0}};
       done       <= 1'b0;
       busy       <= 1'b0;
       ro_run     <= 1'b0;
@@ -185,7 +179,6 @@ module tt_um_jimbok_ro_puf(
             i_idx      <= 5'd0;
             j_idx      <= 5'd1;
             lehmer_acc <= 5'd0;
-            tx_data    <= {SPI_WIDTH{1'b0}};
             done       <= 1'b0;
             busy       <= 1'b1;
             rst_timer  <= 3'd0;
@@ -225,27 +218,9 @@ module tt_um_jimbok_ro_puf(
         // Move to next pair, or pack and advance i.
         S_NEXT: begin
           if (j_idx == 5'd31) begin
-            // All j>i compared. Shift lehmer_acc into tx_data,
-            // packed at its variable bit-width.
-            case (lehmer_shift)
-              3'd5: tx_data <= {tx_data[SPI_WIDTH-6:0], lehmer_acc[4:0]};
-              3'd4: tx_data <= {tx_data[SPI_WIDTH-5:0], lehmer_acc[3:0]};
-              3'd3: tx_data <= {tx_data[SPI_WIDTH-4:0], lehmer_acc[2:0]};
-              3'd2: tx_data <= {tx_data[SPI_WIDTH-3:0], lehmer_acc[1:0]};
-              3'd1: tx_data <= {tx_data[SPI_WIDTH-2:0], lehmer_acc[0]};
-              default: tx_data <= tx_data;
-            endcase
-
-            if (i_idx == 5'd30) begin
-              state <= S_FINISH;
-            end else begin
-              i_idx      <= i_idx + 5'd1;
-              j_idx      <= i_idx + 5'd2;   // (new_i)+1
-              lehmer_acc <= 5'd0;
-              rst_timer  <= 3'd0;
-              cnt_rst    <= 1'b1;
-              state      <= S_RESET_C;
-            end
+            // All j>i compared. Shift lehmer_acc into tx_shift,
+            pack_cnt <= lehmer_shift - 3'd1;
+            state    <= S_PACK;
           end else begin
             j_idx     <= j_idx + 5'd1;
             rst_timer <= 3'd0;
@@ -254,13 +229,29 @@ module tt_um_jimbok_ro_puf(
           end
         end
 
+        S_PACK: begin
+          if (pack_cnt == 3'd0) begin
+            // finished packing accumilator bits into shift register
+            if (i_idx == 5'd30) state <= S_FINISH;
+            else begin
+              i_idx      <= i_idx + 5'd1;
+              j_idx      <= i_idx + 5'd2;
+              lehmer_acc <= 5'd0;
+              rst_timer  <= 3'd0;
+              cnt_rst    <= 1'b1;
+              state      <= S_RESET_C;
+            end
+          end else begin
+            pack_cnt <= pack_cnt - 3'd1;
+          end
+        end
+
         // ---------------------------------------------------------
         S_FINISH: begin
           done    <= 1'b1;
           busy    <= 1'b0;
-          ro_run  <= 1'b0;
           cnt_rst <= 1'b0;
-          state <= S_IDLE;
+          state   <= S_IDLE;
         end
 
         default: state <= S_IDLE;
