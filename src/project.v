@@ -14,8 +14,8 @@ module tt_um_jimbok_ro_puf(
   //////////////////// Parameters ////////////////////
 
   localparam SPI_WIDTH = 129;
-  localparam COUNTER_WIDTH = 21;
-  localparam RO_SIZE = 13;
+  localparam COUNTER_WIDTH = 22;
+  localparam RO_SIZE = 9;
   localparam NUM_ROS = 32; 
 
   //////////////////// Pin Configuration ////////////////////
